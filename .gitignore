@@ -1,0 +1,14 @@
+# build output
+/kubeview
+/dist/
+
+# os / editor cruft
+.DS_Store
+*.swp
+
+# go
+*.out
+coverage.*
+
+# local tool config
+.claude/settings.local.json
