@@ -18,51 +18,50 @@ Set Padding 16
 Set Framerate 24
 
 Hide
-Type "go build -o kubeview . && HOME=$(mktemp -d) ./kubeview --demo -interval 300ms"
+Type "go build -o kubeview . && HOME=$(mktemp -d) ./kubeview --demo -interval 1s"
 Enter
 Sleep 5s
 Show
 Screenshot docs/screenshot.png
-Sleep 2s
+Sleep 3s
 
 Down
-Sleep 400ms
+Sleep 700ms
 Down
-Sleep 400ms
+Sleep 700ms
 Down
-Sleep 1s
+Sleep 2s
 Type "o"
-Sleep 2s
+Sleep 3s
 Type "t"
-Sleep 2s
+Sleep 3s
 Down
+Sleep 700ms
 Down
-Sleep 500ms
-Space
-Sleep 1800ms
-Type "t"
 Sleep 1s
-Tab
+Space
+Sleep 3s
+Type "t"
 Sleep 2s
+Tab
+Sleep 3s
 Tab
 Type "2"
-Sleep 2500ms
+Sleep 4s
 Type "3"
-Sleep 2500ms
+Sleep 4s
 Type "4"
-Sleep 2500ms
+Sleep 4s
 Type "5"
-Sleep 2500ms
+Sleep 4s
 Type "1"
-Sleep 1200ms
+Sleep 2500ms
 Type "T"
-Sleep 1600ms
+Sleep 2200ms
 Type "T"
-Sleep 1600ms
+Sleep 2200ms
 Type "T"
-Sleep 1600ms
-Type "T"
-Sleep 1600ms
-Type "T"
-Sleep 1500ms
+Sleep 2200ms
+Type "1"
+Sleep 2s
 Type "q"
