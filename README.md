@@ -59,19 +59,51 @@ microk8s config > ~/.kube/config
 microk8s enable metrics-server   # needed for the CPU/MEM meters
 ```
 
+## Monitor a remote cluster over SSH
+
+```sh
+kubeview --ssh penzkoft@192.168.64.7
+```
+
+Nothing is installed on the node. kubeview reads its kubeconfig over SSH, opens
+an `ssh -L` tunnel to the API server, and points client-go at it — so only port
+22 has to be reachable and the API server port can stay firewalled.
+
+**Credentials are OpenSSH's business, not kubeview's.** There is no password
+flag, and nothing is stored: authentication is whatever `ssh <host>` already does
+on your machine — agent keys, `~/.ssh/config` aliases, `ProxyJump` bastions,
+`known_hosts` checking, passphrase and 2FA prompts. The tunnel is established
+before the TUI takes the screen, so those prompts work normally.
+
+```sh
+kubeview --ssh mynode                       # a ~/.ssh/config alias
+kubeview --ssh user@node --ssh-opt -J --ssh-opt bastion.corp     # via a bastion
+kubeview --ssh user@node --ssh-opt -i --ssh-opt ~/.ssh/k8s_ed25519
+kubeview --ssh user@node --ssh-kubeconfig-cmd 'sudo cat /etc/rancher/k3s/k3s.yaml'
+```
+
+By default kubeview runs `microk8s config`, falling back to `kubectl config view
+--raw` and then `~/.kube/config`; `--ssh-kubeconfig-cmd` overrides that.
+
+Requires the `ssh` client in `PATH`. Two things still run *on the node* because
+they shell out to `microk8s kubectl`: the interactive shell (`S`) opens its own
+SSH session, and a port-forward (`P`) binds `0.0.0.0` **on the node**, not on
+your machine. Everything else — pods, metrics, logs, env, YAML, events, delete,
+restart, scale — goes through the tunnel.
+
 ## Deploy on a server
 
 kubeview is an interactive TUI, so you run it on a machine and view it in a
-terminal — it is not a background daemon. Two common setups:
+terminal — it is not a background daemon. Three setups:
 
+- **From your workstation over SSH:** `kubeview --ssh user@node` (above). Nothing
+  to install on the node.
 - **On the cluster node:** install the binary (above) and run it over SSH.
-  It uses the node's `~/.kube/config` (and `microk8s kubectl` for shell /
-  port-forward). This is the simplest option.
-- **From your workstation:** point it at the cluster with an exported
-  kubeconfig — `scp node:~/.kube/config ./kc && kubeview -kubeconfig ./kc`
-  (edit the `server:` field to the node's reachable IP). Interactive shell and
-  port-forward assume `microk8s kubectl` on the host, so those two features work
-  best when run on the node itself.
+  It uses the node's `~/.kube/config`. This is the simplest option, and the one
+  where `S` and `P` behave most naturally.
+- **With an exported kubeconfig:** `scp node:~/.kube/config ./kc && kubeview
+  -kubeconfig ./kc` (edit the `server:` field to the node's reachable IP). Needs
+  the API server port open to you.
 
 Before a release exists (or to run an unreleased commit), build on the node and
 install it yourself — stamping the version keeps `kubeview -version` honest about
@@ -197,6 +229,9 @@ unbounded/under-requested/near-OOM pods.
 | flag | default | meaning |
 |------|---------|---------|
 | `-kubeconfig` | `$KUBECONFIG` or `~/.kube/config` | kubeconfig path |
+| `--ssh` | off | monitor `[user@]host` over an SSH tunnel; installs nothing there |
+| `--ssh-opt` | — | extra argument passed to `ssh` (repeatable), e.g. `-J bastion` |
+| `--ssh-kubeconfig-cmd` | `microk8s config` … | command run on the SSH host to print a kubeconfig |
 | `-namespace` | all | limit to one namespace |
 | `-interval` | `2s` | refresh interval |
 | `-truecolor` | `true` | force 24-bit colour (btop-style gradients) |

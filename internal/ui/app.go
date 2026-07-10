@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -393,10 +392,9 @@ func (m Model) inspectCmd(p cluster.PodInfo, container string) tea.Cmd {
 }
 
 // shellCmd suspends the TUI and drops into an interactive shell in the container.
-func shellCmd(p cluster.PodInfo, container string) tea.Cmd {
-	args := []string{"kubectl", "exec", "-it", "-n", p.Namespace, p.Name, "-c", container,
-		"--", "sh", "-c", "exec bash 2>/dev/null || exec sh"}
-	c := exec.Command("microk8s", args...)
+// Under --ssh the command runs on the remote node, over its own ssh session.
+func (m Model) shellCmd(p cluster.PodInfo, container string) tea.Cmd {
+	c := m.client.ShellCommand(p.Namespace, p.Name, container)
 	return tea.ExecProcess(c, func(err error) tea.Msg { return execDoneMsg{err} })
 }
 

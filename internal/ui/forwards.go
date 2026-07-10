@@ -31,13 +31,13 @@ func (m Model) listenFwdCmd() tea.Cmd {
 	return func() tea.Msg { return <-ch }
 }
 
-// startForward launches a background port-forward (local==remote port).
+// startForward launches a background port-forward (local==remote port). It binds
+// on whichever host runs kubectl — this machine, or the node when using --ssh.
 func (m *Model) startForward(p cluster.PodInfo) {
 	port := firstPort(p)
 	f := &forward{id: m.fwdSeq, ns: p.Namespace, pod: p.Name, local: port, remote: port, status: "running"}
 	m.fwdSeq++
-	f.cmd = exec.Command("microk8s", "kubectl", "port-forward", "-n", p.Namespace,
-		"pod/"+p.Name, fmt.Sprintf("%d:%d", port, port), "--address", "0.0.0.0")
+	f.cmd = m.client.PortForwardCommand(p.Namespace, p.Name, port, port)
 	if err := f.cmd.Start(); err != nil {
 		f.status, f.err = "error", err
 		m.forwards = append(m.forwards, f)
@@ -46,7 +46,7 @@ func (m *Model) startForward(p cluster.PodInfo) {
 	ch, id := m.fwdCh, f.id
 	go func() { ch <- fwdEvent{id: id, err: f.cmd.Wait()} }()
 	m.forwards = append(m.forwards, f)
-	m.status = fmt.Sprintf("✓ forwarding 0.0.0.0:%d → %s:%d", port, p.Name, port)
+	m.status = fmt.Sprintf("✓ forwarding %s:%d → %s:%d", m.client.ForwardBindHost(), port, p.Name, port)
 }
 
 func (m *Model) stopForward(i int) {

@@ -24,6 +24,9 @@ type Client struct {
 	Context   string
 	cfg       *rest.Config
 
+	ssh    *sshTarget // non-nil when reached over an ssh tunnel
+	tunnel *tunnel
+
 	demo     bool
 	demoTick int
 }
@@ -41,6 +44,12 @@ func New(kubeconfigPath string) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	return newFromConfig(cfg, ctxName)
+}
+
+// newFromConfig builds the clientsets. Shared by the local and ssh paths so both
+// get the same QPS limits and warning handling.
+func newFromConfig(cfg *rest.Config, ctxName string) (*Client, error) {
 	cfg.QPS = 50
 	cfg.Burst = 100
 	// Silence server-side deprecation warnings; they would corrupt the TUI.

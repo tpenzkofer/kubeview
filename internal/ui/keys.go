@@ -181,7 +181,7 @@ func (m Model) handleDashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// actions on the selected pod
 	case "S":
 		if p, ok := m.actionPod(); ok && len(p.Containers) > 0 {
-			return m, shellCmd(p, m.selectedContainer())
+			return m, m.shellCmd(p, m.selectedContainer())
 		}
 	case "i":
 		if p, ok := m.actionPod(); ok && len(p.Containers) > 0 {

@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,10 +22,43 @@ import (
 // version is overridden at build time via -ldflags "-X main.version=...".
 var version = "dev"
 
-func main() {
+// repeatable collects a flag that may be given more than once, e.g.
+// --ssh-opt -J --ssh-opt bastion.corp
+type repeatable []string
+
+func (r *repeatable) String() string     { return strings.Join(*r, " ") }
+func (r *repeatable) Set(v string) error { *r = append(*r, v); return nil }
+
+// main defers to run so that `defer client.Close()` — which tears down the ssh
+// tunnel — is not skipped by an os.Exit on an error path.
+func main() { os.Exit(run()) }
+
+// cleanupOnSignal tears the ssh tunnel down on the signals that would otherwise
+// kill us without running deferred functions. SIGPIPE is the one that bites in
+// practice: `kubeview --ssh host --snapshot | head` closes the pipe, and Go's
+// default handling for a broken stdout is to die on the spot, orphaning `ssh -N`.
+// SIGINT is left to bubbletea, which quits cleanly on ctrl-c.
+func cleanupOnSignal(c *cluster.Client) {
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGPIPE)
+	go func() {
+		sig := <-sigs
+		c.Close()
+		if s, ok := sig.(syscall.Signal); ok {
+			os.Exit(128 + int(s))
+		}
+		os.Exit(1)
+	}()
+}
+
+func run() int {
 	cfg := ui.LoadConfig()
 
 	kubeconfig := flag.String("kubeconfig", "", "path to kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
+	sshTarget := flag.String("ssh", "", "monitor a cluster on [user@]host over ssh (installs nothing there)")
+	sshKubeconfigCmd := flag.String("ssh-kubeconfig-cmd", "", "command run on the ssh host to print a kubeconfig")
+	var sshOpts repeatable
+	flag.Var(&sshOpts, "ssh-opt", "extra argument passed to ssh (repeatable), e.g. --ssh-opt -J --ssh-opt bastion")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	interval := flag.Duration("interval", time.Duration(cfg.IntervalMs)*time.Millisecond, "refresh interval")
 	namespace := flag.String("namespace", cfg.Namespace, "limit to a single namespace (default: all)")
@@ -36,7 +72,7 @@ func main() {
 
 	if *showVersion {
 		fmt.Println("kubeview", version)
-		return
+		return 0
 	}
 
 	// Force a 24-bit colour profile so gradients aren't quantised to 256 colours
@@ -51,42 +87,60 @@ func main() {
 	klog.SetOutput(io.Discard)
 	klog.LogToStderr(false)
 
+	if *demo && *sshTarget != "" {
+		fmt.Fprintln(os.Stderr, "kubeview: --demo and --ssh are mutually exclusive")
+		return 1
+	}
+
 	var client *cluster.Client
-	if *demo {
+	var err error
+	switch {
+	case *demo:
 		client = cluster.NewDemo()
-	} else {
-		var err error
+	case *sshTarget != "":
+		// Set up before the TUI takes the screen, so ssh can prompt for a
+		// passphrase, a password or 2FA on the real terminal.
+		client, err = cluster.NewSSH(*sshTarget, sshOpts, *sshKubeconfigCmd)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "kubeview: %v\n", err)
+			return 1
+		}
+	default:
 		client, err = cluster.New(*kubeconfig)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "kubeview: cannot connect to cluster: %v\n", err)
 			fmt.Fprintln(os.Stderr, "hint: on a microk8s node run:  microk8s config > ~/.kube/config")
+			fmt.Fprintln(os.Stderr, "  or monitor it from here:  kubeview --ssh user@node")
 			fmt.Fprintln(os.Stderr, "  or try:  kubeview --demo")
-			os.Exit(1)
+			return 1
 		}
 	}
+	defer client.Close()
+	cleanupOnSignal(client)
 
 	if *snapshot {
 		if err := ui.PrintSnapshot(os.Stdout, client, *namespace); err != nil {
 			fmt.Fprintf(os.Stderr, "kubeview: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
-		return
+		return 0
 	}
 
 	if *dumpFrame != "" {
 		var w, h int
 		if _, err := fmt.Sscanf(*dumpFrame, "%dx%d", &w, &h); err != nil || w <= 0 || h <= 0 {
 			fmt.Fprintln(os.Stderr, "kubeview: -dump-frame expects WxH, e.g. 140x40")
-			os.Exit(1)
+			return 1
 		}
 		fmt.Println(ui.RenderOnce(client, *namespace, w, h, *frameMode))
-		return
+		return 0
 	}
 
 	model := ui.New(client, *interval, *namespace).WithConfig(cfg)
 	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "kubeview: %v\n", err)
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

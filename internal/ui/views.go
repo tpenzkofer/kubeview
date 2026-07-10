@@ -1022,7 +1022,7 @@ func (m Model) renderNodesView(bodyH int) string {
 func (m Model) renderForwardsView(bodyH int) string {
 	inner := m.width - 2
 	lines := []string{
-		styDim.Render("Background `kubectl port-forward` processes. They bind 0.0.0.0 on this host so you can curl the pod."),
+		styDim.Render("Background `kubectl port-forward` processes. They bind 0.0.0.0 on " + m.client.ForwardBindHost() + " so you can curl the pod."),
 		styDim.Render("Start one with P on a pod (dashboard).  x stop selected · X stop all."),
 		"",
 	}
@@ -1041,8 +1041,8 @@ func (m Model) renderForwardsView(bodyH int) string {
 		if f.err != nil && f.status == "error" {
 			detail = "  " + f.err.Error()
 		}
-		row := fmt.Sprintf("%s  0.0.0.0:%d → %s/%s:%d   %s%s",
-			pad(fmt.Sprintf("#%d", f.id), 4), f.local, f.ns, f.pod, f.remote,
+		row := fmt.Sprintf("%s  %s:%d → %s/%s:%d   %s%s",
+			pad(fmt.Sprintf("#%d", f.id), 4), m.client.ForwardBindHost(), f.local, f.ns, f.pod, f.remote,
 			lipgloss.NewStyle().Foreground(col).Render(f.status), styDim.Render(detail))
 		if i == m.fwdCursor {
 			row = stySelect.Render(fit(row, inner))
