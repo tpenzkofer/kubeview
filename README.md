@@ -63,7 +63,7 @@ microk8s enable metrics-server   # needed for the CPU/MEM meters
 ## Monitor a remote cluster over SSH
 
 ```sh
-kubeview --ssh penzkoft@192.168.64.7
+kubeview --ssh <user>@<ip>
 ```
 
 Nothing is installed on the node. kubeview reads its kubeconfig over SSH, opens
