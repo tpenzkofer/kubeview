@@ -73,13 +73,27 @@ terminal — it is not a background daemon. Two common setups:
   port-forward assume `microk8s kubectl` on the host, so those two features work
   best when run on the node itself.
 
-Cross-compile for the server's arch and copy the binary directly:
+Before a release exists (or to run an unreleased commit), build on the node and
+install it yourself — stamping the version keeps `kubeview -version` honest about
+which commit is running:
+
+```sh
+rsync -a --exclude .git ./ node:~/kubeview/
+ssh node 'cd ~/kubeview && go build -trimpath \
+  -ldflags "-s -w -X main.version=$(git rev-parse --short HEAD)" -o kubeview . \
+  && sudo install -m 0755 kubeview /usr/local/bin/kubeview'
+```
+
+Note this copies the binary rather than linking it, so a later rebuild in the
+source tree does not update `/usr/local/bin` — re-run the install.
+
+Or cross-compile for the server's arch and copy it over:
 
 ```sh
 make dist && scp dist/kubeview-linux-arm64 user@server:/usr/local/bin/kubeview
 ```
 
-Releases (cross-compiled tarballs + checksums) are produced automatically by
+Releases (tarballs, `.deb`/`.rpm`, checksums) are produced automatically by
 GitHub Actions when you push a `vX.Y.Z` tag (`git tag v0.1.0 && git push --tags`).
 
 ## Run
@@ -184,3 +198,7 @@ unbounded/under-requested/near-OOM pods.
   header shows `[metrics-server off]`.
 - Status column mirrors `kubectl get pods` (CrashLoopBackOff, Init:0/1,
   ContainerCreating, Completed, Error, Terminating, …) and is colour-coded.
+- The shell (`S`), inspect (`i`) and the env pane's runtime list all need
+  `pods/exec` on the kubeconfig's identity. Masking secret-looking values is
+  shoulder-surfing protection, not access control — anyone who can run kubeview
+  against the cluster can already read them.
