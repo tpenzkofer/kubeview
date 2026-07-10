@@ -36,7 +36,8 @@ sudo apt install "./${deb}"
 
 An `.rpm` with the same name scheme is published for Fedora/RHEL.
 
-**With Go (≥ the version in `go.mod`):**
+**With Go (≥ the version in `go.mod`):** needs no published release — the module
+proxy resolves `@latest` to the tip of `main`.
 
 ```sh
 go install github.com/tpenzkofer/kubeview@latest

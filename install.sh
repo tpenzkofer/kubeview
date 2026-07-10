@@ -22,12 +22,16 @@ esac
 
 tag="${1:-}"
 if [ -z "$tag" ]; then
-  tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" \
-    | grep -m1 '"tag_name"' | cut -d'"' -f4)
+  # `|| true`: without a release the API 404s, and under `set -e -o pipefail`
+  # the failing pipeline would abort here instead of reaching the hint below.
+  tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null \
+    | grep -m1 '"tag_name"' | cut -d'"' -f4 || true)
 fi
 if [ -z "$tag" ]; then
-  echo "error: could not determine the latest release tag for $REPO" >&2
-  echo "pass one explicitly, e.g. install.sh v0.1.0" >&2
+  echo "error: $REPO has no published release to install." >&2
+  echo "" >&2
+  echo "  pass a tag explicitly:  install.sh v0.1.0" >&2
+  echo "  or build from source:   go install github.com/$REPO@latest" >&2
   exit 1
 fi
 
@@ -38,7 +42,11 @@ echo "installing kubeview $tag ($os/$arch)"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-curl -fsSL "$url" -o "$tmp/$asset"
+if ! curl -fsSL "$url" -o "$tmp/$asset" 2>/dev/null; then
+  echo "error: no asset $asset in release $tag of $REPO" >&2
+  echo "see https://github.com/$REPO/releases for what is published" >&2
+  exit 1
+fi
 tar -xzf "$tmp/$asset" -C "$tmp"
 
 if install -m 0755 "$tmp/kubeview" "$DEST/kubeview" 2>/dev/null; then
