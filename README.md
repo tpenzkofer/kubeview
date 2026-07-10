@@ -23,6 +23,19 @@ curl -fsSL https://raw.githubusercontent.com/tpenzkofer/kubeview/main/install.sh
 # or a specific version:  ... | bash -s -- v0.1.0
 ```
 
+**Debian / Ubuntu (`.deb`):** tracked by `dpkg`, so `apt remove kubeview` cleans up.
+
+```sh
+arch=$(dpkg --print-architecture)                     # amd64 or arm64
+tag=$(curl -fsSL https://api.github.com/repos/tpenzkofer/kubeview/releases/latest \
+      | grep -m1 '"tag_name"' | cut -d'"' -f4)
+deb="kubeview_${tag#v}_linux_${arch}.deb"
+curl -fsSLO "https://github.com/tpenzkofer/kubeview/releases/download/${tag}/${deb}"
+sudo apt install "./${deb}"
+```
+
+An `.rpm` with the same name scheme is published for Fedora/RHEL.
+
 **With Go (≥ the version in `go.mod`):**
 
 ```sh

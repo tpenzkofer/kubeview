@@ -31,6 +31,24 @@ archives:
       - README.md
       - LICENSE
 
+nfpms:
+  - id: packages
+    package_name: kubeview
+    vendor: Tobias Penzkofer
+    homepage: https://github.com/tpenzkofer/kubeview
+    maintainer: Tobias Penzkofer <penzkofert@gmail.com>
+    description: btop-style terminal dashboard for Kubernetes clusters.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+    file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/kubeview/LICENSE
+      - src: README.md
+        dst: /usr/share/doc/kubeview/README.md
+
 checksum:
   name_template: checksums.txt
 
