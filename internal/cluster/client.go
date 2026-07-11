@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"os/exec"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -27,8 +28,19 @@ type Client struct {
 	ssh    *sshTarget // non-nil when reached over an ssh tunnel
 	tunnel *tunnel
 
+	kubectlCmd []string // argv prefix for kubectl on the cluster host
+
 	demo     bool
 	demoTick int
+}
+
+// kubectl returns the argv prefix for running kubectl on whichever host owns the
+// cluster. Empty only for the demo client, which never shells out.
+func (c *Client) kubectl() []string {
+	if len(c.kubectlCmd) > 0 {
+		return c.kubectlCmd
+	}
+	return []string{"kubectl"}
 }
 
 // NewDemo returns a client that serves a synthetic cluster (no API access).
@@ -39,12 +51,32 @@ func NewDemo() *Client {
 
 // New builds a client from an explicit kubeconfig path, $KUBECONFIG, ~/.kube/config,
 // or, failing all of those, the in-cluster service account.
-func New(kubeconfigPath string) (*Client, error) {
+func New(kubeconfigPath, kubectlOverride string) (*Client, error) {
 	cfg, ctxName, err := loadConfig(kubeconfigPath)
 	if err != nil {
 		return nil, err
 	}
-	return newFromConfig(cfg, ctxName)
+	c, err := newFromConfig(cfg, ctxName)
+	if err != nil {
+		return nil, err
+	}
+	c.kubectlCmd = detectKubectlLocal(kubectlOverride)
+	return c, nil
+}
+
+// detectKubectlLocal picks a kubectl invocation on this machine: an explicit
+// override, else plain kubectl when it is on PATH, else microk8s' bundled one.
+func detectKubectlLocal(override string) []string {
+	if override != "" {
+		return strings.Fields(override)
+	}
+	if _, err := exec.LookPath("kubectl"); err == nil {
+		return []string{"kubectl"}
+	}
+	if _, err := exec.LookPath("microk8s"); err == nil {
+		return []string{"microk8s", "kubectl"}
+	}
+	return []string{"kubectl"}
 }
 
 // newFromConfig builds the clientsets. Shared by the local and ssh paths so both

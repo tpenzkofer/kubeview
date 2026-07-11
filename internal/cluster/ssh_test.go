@@ -56,9 +56,9 @@ func TestSplitHostPort(t *testing.T) {
 	}
 }
 
-// A local client must not grow an ssh prefix.
+// A local client must not grow an ssh prefix, and uses its resolved kubectl.
 func TestLocalCommandsAreNotWrappedInSSH(t *testing.T) {
-	c := &Client{}
+	c := &Client{kubectlCmd: []string{"microk8s", "kubectl"}}
 	if got := c.ShellCommand("default", "web-1", "web").Args[0]; got != "microk8s" {
 		t.Errorf("local shell command starts with %q, want microk8s", got)
 	}
@@ -67,8 +67,19 @@ func TestLocalCommandsAreNotWrappedInSSH(t *testing.T) {
 	}
 }
 
+// The default, with nothing resolved, is plain kubectl.
+func TestKubectlDefaultsToPlainKubectl(t *testing.T) {
+	c := &Client{}
+	if got := c.ShellCommand("default", "web-1", "web").Args[0]; got != "kubectl" {
+		t.Errorf("default shell command starts with %q, want kubectl", got)
+	}
+}
+
 func TestSSHClientWrapsCommands(t *testing.T) {
-	c := &Client{ssh: &sshTarget{target: "user@node", opts: []string{"-J", "bastion"}}}
+	c := &Client{
+		ssh:        &sshTarget{target: "user@node", opts: []string{"-J", "bastion"}},
+		kubectlCmd: []string{"kubectl"},
+	}
 
 	sh := c.ShellCommand("default", "web-1", "web")
 	if sh.Args[0] != "ssh" || sh.Args[1] != "-t" {

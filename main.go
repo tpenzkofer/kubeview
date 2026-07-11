@@ -57,6 +57,7 @@ func run() int {
 	kubeconfig := flag.String("kubeconfig", "", "path to kubeconfig (default: $KUBECONFIG or ~/.kube/config)")
 	sshTarget := flag.String("ssh", "", "monitor a cluster on [user@]host over ssh (installs nothing there)")
 	sshKubeconfigCmd := flag.String("ssh-kubeconfig-cmd", "", "command run on the ssh host to print a kubeconfig")
+	kubectlCmd := flag.String("kubectl", "", "kubectl invocation for shell/port-forward (default: auto-detect kubectl or microk8s kubectl)")
 	var sshOpts repeatable
 	flag.Var(&sshOpts, "ssh-opt", "extra argument passed to ssh (repeatable), e.g. --ssh-opt -J --ssh-opt bastion")
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -100,13 +101,13 @@ func run() int {
 	case *sshTarget != "":
 		// Set up before the TUI takes the screen, so ssh can prompt for a
 		// passphrase, a password or 2FA on the real terminal.
-		client, err = cluster.NewSSH(*sshTarget, sshOpts, *sshKubeconfigCmd)
+		client, err = cluster.NewSSH(*sshTarget, sshOpts, *sshKubeconfigCmd, *kubectlCmd)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "kubeview: %v\n", err)
 			return 1
 		}
 	default:
-		client, err = cluster.New(*kubeconfig)
+		client, err = cluster.New(*kubeconfig, *kubectlCmd)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "kubeview: cannot connect to cluster: %v\n", err)
 			fmt.Fprintln(os.Stderr, "hint: on a microk8s node run:  microk8s config > ~/.kube/config")

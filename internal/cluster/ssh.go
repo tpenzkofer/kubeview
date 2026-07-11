@@ -52,7 +52,7 @@ func (t *tunnel) Close() {
 // the API server port can stay firewalled.
 //
 // It must be called before the TUI starts: ssh may prompt on the terminal.
-func NewSSH(target string, opts []string, kubeconfigCmd string) (*Client, error) {
+func NewSSH(target string, opts []string, kubeconfigCmd, kubectlOverride string) (*Client, error) {
 	if _, err := exec.LookPath("ssh"); err != nil {
 		return nil, fmt.Errorf("--ssh needs the ssh client in PATH: %w", err)
 	}
@@ -100,7 +100,25 @@ func NewSSH(target string, opts []string, kubeconfigCmd string) (*Client, error)
 	}
 	c.ssh = &sshTarget{target: target, opts: opts}
 	c.tunnel = tun
+	c.kubectlCmd = detectKubectlSSH(target, opts, kubectlOverride)
 	return c, nil
+}
+
+// detectKubectlSSH picks a kubectl invocation on the remote host: an explicit
+// override, else it asks the far side whether it has plain kubectl or microk8s.
+func detectKubectlSSH(target string, opts []string, override string) []string {
+	if override != "" {
+		return strings.Fields(override)
+	}
+	const probe = `command -v kubectl >/dev/null 2>&1 && echo kubectl || ` +
+		`{ command -v microk8s >/dev/null 2>&1 && echo "microk8s kubectl" || echo kubectl; }`
+	args := append(append([]string{}, opts...), target, probe)
+	if out, err := exec.Command("ssh", args...).Output(); err == nil {
+		if f := strings.Fields(strings.TrimSpace(string(out))); len(f) > 0 {
+			return f
+		}
+	}
+	return []string{"kubectl"}
 }
 
 func fetchKubeconfig(target string, opts []string, remoteCmd string) ([]byte, error) {
@@ -227,19 +245,17 @@ func shellQuote(s string) string {
 // ShellCommand is an interactive shell inside a container, run on whichever host
 // owns the cluster.
 func (c *Client) ShellCommand(namespace, pod, container string) *exec.Cmd {
-	return c.remoteCmd(true, []string{
-		"microk8s", "kubectl", "exec", "-it", "-n", namespace, pod, "-c", container,
-		"--", "sh", "-c", "exec bash 2>/dev/null || exec sh",
-	})
+	argv := append(c.kubectl(), "exec", "-it", "-n", namespace, pod, "-c", container,
+		"--", "sh", "-c", "exec bash 2>/dev/null || exec sh")
+	return c.remoteCmd(true, argv)
 }
 
 // PortForwardCommand forwards a pod port. It binds on the host running kubectl,
 // which under --ssh is the remote node, not this machine.
 func (c *Client) PortForwardCommand(namespace, pod string, local, remote int32) *exec.Cmd {
-	return c.remoteCmd(false, []string{
-		"microk8s", "kubectl", "port-forward", "-n", namespace,
-		"pod/" + pod, fmt.Sprintf("%d:%d", local, remote), "--address", "0.0.0.0",
-	})
+	argv := append(c.kubectl(), "port-forward", "-n", namespace,
+		"pod/"+pod, fmt.Sprintf("%d:%d", local, remote), "--address", "0.0.0.0")
+	return c.remoteCmd(false, argv)
 }
 
 // ForwardBindHost names the machine a port-forward binds on, for the UI.

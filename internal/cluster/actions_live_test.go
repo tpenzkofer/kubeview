@@ -12,7 +12,7 @@ func TestActionsLive(t *testing.T) {
 	if os.Getenv("KUBEVIEW_LIVE") == "" {
 		t.Skip("set KUBEVIEW_LIVE=1 to run against the real cluster")
 	}
-	c, err := New("")
+	c, err := New("", "")
 	if err != nil {
 		t.Fatal(err)
 	}
