@@ -424,13 +424,28 @@ func (m Model) detailLines(p cluster.PodInfo, inner int) []string {
 		sel += styDim.Render("  ([ ] switch)")
 	}
 
+	// The resource line differs by backend: Docker exposes network I/O and PIDs
+	// (which the k8s metrics API does not), while ready/restarts matter more for
+	// pods than for a single container.
+	var resLine string
+	if m.client.IsDocker() {
+		net := "—"
+		if r, ok := m.netRate[p.Namespace+"/"+p.Name]; ok {
+			net = fmt.Sprintf("↓%s/s ↑%s/s", humanBytes(int64(r.rx)), humanBytes(int64(r.tx)))
+		}
+		resLine = fmt.Sprintf("cpu %s  mem %s  net %s  pids %d  ports %s",
+			humanCPU(p.CPUMilli), humanBytes(p.MemBytes), net, p.PIDs, ports)
+	} else {
+		resLine = fmt.Sprintf("cpu %s  mem %s  ready %d/%d  restarts %d  ports %s",
+			humanCPU(p.CPUMilli), humanBytes(p.MemBytes), p.Ready, p.Total, p.Restarts, ports)
+	}
+
 	return []string{
 		fmt.Sprintf("%s  %s  %s",
 			lipgloss.NewStyle().Foreground(statusColor(p.Status)).Bold(true).Render(p.Status),
 			styText.Render(podIPLabel(p)),
 			styDim.Render("on "+p.Node+"  "+owner)),
-		styDim.Render(fmt.Sprintf("cpu %s  mem %s  ready %d/%d  restarts %d  ports %s",
-			humanCPU(p.CPUMilli), humanBytes(p.MemBytes), p.Ready, p.Total, p.Restarts, ports)),
+		styDim.Render(resLine),
 		styText.Render(sel),
 		styDim.Render("image: " + cinfo),
 	}
@@ -516,9 +531,49 @@ func (m Model) logPaneLines(inner, rows int) []string {
 	}
 	out := make([]string, 0, end-start)
 	for _, l := range lines[start:end] {
-		out = append(out, styText.Render(fit(l, inner)))
+		out = append(out, logColor(l).Render(fit(l, inner)))
 	}
 	return out
+}
+
+// logColor tints a log line by apparent severity — error/warn lines are where
+// you look first. Works for any backend's logs.
+func logColor(line string) lipgloss.Style {
+	switch logSeverity(line) {
+	case sevError:
+		return lipgloss.NewStyle().Foreground(colRed)
+	case sevWarn:
+		return lipgloss.NewStyle().Foreground(colYellow)
+	}
+	return styText
+}
+
+type severity int
+
+const (
+	sevNone severity = iota
+	sevWarn
+	sevError
+)
+
+var (
+	errorTokens = []string{"error", "fatal", "panic", "exception", "failed", `"error"`, "level=error"}
+	warnTokens  = []string{"warn", "deprecat", `"warn"`, "level=warn"}
+)
+
+func logSeverity(line string) severity {
+	l := strings.ToLower(line)
+	for _, t := range errorTokens {
+		if strings.Contains(l, t) {
+			return sevError
+		}
+	}
+	for _, t := range warnTokens {
+		if strings.Contains(l, t) {
+			return sevWarn
+		}
+	}
+	return sevNone
 }
 
 // buildEnvLines shows the container's environment twice over: what the pod spec
@@ -1112,7 +1167,7 @@ func (m Model) renderModal(bodyH int) string {
 				lipgloss.NewStyle().Foreground(colRed).Render("n / esc ")+styDim.Render("cancel"))
 	default:
 		warn := ""
-		if md.kind == mDelete {
+		if md.kind == mDelete || md.kind == mKill {
 			warn = "This is destructive."
 		}
 		content = append(content,
@@ -1153,9 +1208,9 @@ func (m Model) renderFooter() string {
 		case m.focus == focusPane:
 			keys = "LOGS  ↑/↓ scroll · f follow · w wrap · p prev · [ ] container · / search · e env · tab back"
 		case m.tree:
-			keys = "↑/↓ move (rows & headers) · space fold/unfold · n namespace · N all · o sort · t flat · tab pane · e env · S i y D d R s P · ?"
+			keys = "↑/↓ move (rows & headers) · space fold/unfold · n namespace · N all · o sort · t flat · tab pane · e env · " + m.actionKeys() + " · ?"
 		default:
-			keys = "↑/↓ move · o sort · t tree · tab pane · e env · S i y D · d R s P · 2net 3events 4press 5nodes 6fwd · T theme · ?"
+			keys = "↑/↓ move · o sort · t tree · tab pane · e env · " + m.actionKeys() + " · 2-6 views · T theme · ?"
 		}
 	}
 	bar := styDim.Render(" " + keys)
@@ -1168,6 +1223,14 @@ func (m Model) renderFooter() string {
 		return lipgloss.JoinVertical(lipgloss.Left, st, bar)
 	}
 	return bar
+}
+
+// actionKeys lists the per-item action keys for the current backend.
+func (m Model) actionKeys() string {
+	if m.client.IsDocker() {
+		return "S shell i inspect y d remove · u start x stop c pause K kill R restart"
+	}
+	return "S i y D · d R s P"
 }
 
 func portFwdPrompt(p cluster.PodInfo) string {

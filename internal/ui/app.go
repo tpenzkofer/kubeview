@@ -77,6 +77,7 @@ const (
 	mRestart
 	mScale
 	mPortFwd
+	mKill
 )
 
 const (
@@ -113,6 +114,10 @@ type Model struct {
 	nodeCPU map[string][]float64
 	nodeMEM map[string][]float64
 	podCPU  map[string][]float64
+
+	// Docker network rate: cumulative counters differenced across snapshots.
+	netPrev map[string]netSample
+	netRate map[string]netSample
 
 	// bottom-right pane (logs or env)
 	pane         paneMode
@@ -205,7 +210,15 @@ func New(c *cluster.Client, interval time.Duration, namespace string) Model {
 		nodeCPU:   map[string][]float64{},
 		nodeMEM:   map[string][]float64{},
 		podCPU:    map[string][]float64{},
+		netPrev:   map[string]netSample{},
+		netRate:   map[string]netSample{},
 	}
+}
+
+// netSample holds bytes (cumulative) or bytes/sec (rate), with the sample time.
+type netSample struct {
+	rx, tx float64
+	t      time.Time
 }
 
 func (m Model) Init() tea.Cmd { return tea.Batch(m.collectCmd(), m.listenFwdCmd()) }
@@ -299,6 +312,17 @@ func (m Model) deleteCmd(p cluster.PodInfo) tea.Cmd {
 		defer cancel()
 		err := c.DeletePod(ctx, p.Namespace, p.Name)
 		return actionResultMsg{note: "deleted pod " + p.Name, err: err}
+	}
+}
+
+// lifecycleCmd runs a Docker lifecycle verb (start/stop/pause/unpause/kill).
+func (m Model) lifecycleCmd(verb string, p cluster.PodInfo) tea.Cmd {
+	c := m.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+		note, err := c.ContainerLifecycle(ctx, verb, p.Name)
+		return actionResultMsg{note: note, err: err}
 	}
 }
 
@@ -822,6 +846,36 @@ func (m *Model) recordHistory() {
 	for k := range m.podCPU {
 		if _, ok := seen[k]; !ok {
 			delete(m.podCPU, k)
+		}
+	}
+	m.recordNetRates(seen)
+}
+
+// recordNetRates differences Docker's cumulative rx/tx counters between
+// snapshots into a per-second rate. A counter that goes backwards (a restarted
+// container) is treated as a fresh start rather than a negative rate.
+func (m *Model) recordNetRates(live map[string]struct{}) {
+	now := m.snap.CollectedAt
+	for _, p := range m.snap.Pods {
+		if p.NetRxBytes == 0 && p.NetTxBytes == 0 {
+			continue
+		}
+		key := p.Namespace + "/" + p.Name
+		cur := netSample{rx: float64(p.NetRxBytes), tx: float64(p.NetTxBytes), t: now}
+		if prev, ok := m.netPrev[key]; ok {
+			if dt := now.Sub(prev.t).Seconds(); dt > 0 {
+				m.netRate[key] = netSample{
+					rx: math.Max(0, (cur.rx-prev.rx)/dt),
+					tx: math.Max(0, (cur.tx-prev.tx)/dt),
+				}
+			}
+		}
+		m.netPrev[key] = cur
+	}
+	for k := range m.netPrev {
+		if _, ok := live[k]; !ok {
+			delete(m.netPrev, k)
+			delete(m.netRate, k)
 		}
 	}
 }

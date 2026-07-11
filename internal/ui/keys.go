@@ -205,6 +205,27 @@ func (m Model) handleDashKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.modal = &modalState{kind: mRestart, pod: p,
 				prompt: "Restart workload behind " + p.Name + "?"}
 		}
+	// Docker lifecycle (no Kubernetes equivalent): start / stop / pause / kill.
+	case "u":
+		if p, ok := m.dockerActionPod(); ok {
+			return m, m.lifecycleCmd("start", p)
+		}
+	case "x":
+		if p, ok := m.dockerActionPod(); ok {
+			return m, m.lifecycleCmd("stop", p)
+		}
+	case "c":
+		if p, ok := m.dockerActionPod(); ok {
+			verb := "pause"
+			if p.Status == "Paused" {
+				verb = "unpause"
+			}
+			return m, m.lifecycleCmd(verb, p)
+		}
+	case "K":
+		if p, ok := m.dockerActionPod(); ok {
+			m.modal = &modalState{kind: mKill, pod: p, prompt: "Kill container " + p.Name + "?"}
+		}
 	case "s":
 		if m.client.IsDocker() {
 			m.status = "scaling isn't a Docker concept — that's Compose or Swarm"
@@ -368,6 +389,15 @@ func (m *Model) actionPod() (cluster.PodInfo, bool) {
 	return m.selectedPod()
 }
 
+// dockerActionPod gates the container-lifecycle keys to Docker mode so they are
+// inert (not surprising) against a Kubernetes cluster.
+func (m *Model) dockerActionPod() (cluster.PodInfo, bool) {
+	if !m.client.IsDocker() {
+		return cluster.PodInfo{}, false
+	}
+	return m.actionPod()
+}
+
 // onSelectionChange resets the bottom-right pane for the newly selected pod.
 func (m Model) onSelectionChange() (tea.Model, tea.Cmd) {
 	m.selContainer = 0
@@ -462,6 +492,8 @@ func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.deleteCmd(pod)
 		case mRestart:
 			return m, m.restartCmd(pod)
+		case mKill:
+			return m, m.lifecycleCmd("kill", pod)
 		case mPortFwd:
 			m.startForward(pod)
 			m.view = viewForwards

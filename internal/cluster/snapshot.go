@@ -67,6 +67,10 @@ type PodInfo struct {
 	MemReqBytes    int64
 	MemLimBytes    int64
 	Containers     []ContainerInfo
+	// Docker-only: the k8s metrics API exposes neither network I/O nor PID count.
+	NetRxBytes int64
+	NetTxBytes int64
+	PIDs       int
 }
 
 // ContainerInfo describes one container within a pod.

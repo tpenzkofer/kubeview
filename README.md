@@ -105,9 +105,15 @@ kubeview maps a container host onto the same dashboard: a **container** is a pod
 its **Compose project** is the namespace, its **Compose service** is the workload
 — so the tree (`t`) groups `project ▸ service ▸ container`, and logs (`docker
 logs`), the shell (`S`), inspect (`i`), the env pane (`docker inspect` +
-`docker exec env`), live CPU/MEM (`docker stats`), delete (`d`) and restart (`R`)
-all work as they do for Kubernetes. Memory/CPU limits set with `--memory`/`--cpus`
-show up in the pressure view (`4`); the nodes view (`5`) is the single engine host.
+`docker exec env`), live CPU/MEM (`docker stats`) and remove (`d`) all work as
+they do for Kubernetes. Memory/CPU limits set with `--memory`/`--cpus` show up in
+the pressure view (`4`); the nodes view (`5`) is the single engine host. The
+detail pane adds the network rate and PID count, which the Kubernetes metrics API
+doesn't expose.
+
+Full container lifecycle, since Docker has one (Kubernetes does not): `u` start,
+`x` stop, `c` pause/unpause, `R` restart, `K` kill (confirmed), `d` remove
+(confirmed).
 
 It shells out to the `docker` CLI (so Podman and nerdctl work via `--docker-bin`);
 with `--ssh` it runs those commands on the remote host over the ssh session, so

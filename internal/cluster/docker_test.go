@@ -1,6 +1,9 @@
 package cluster
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestParseSize(t *testing.T) {
 	// Variables (not constants) so the fractional products evaluate at runtime,
@@ -34,6 +37,27 @@ func TestParseCPUPerc(t *testing.T) {
 		if got := parseCPUPerc(in); got != want {
 			t.Errorf("parseCPUPerc(%q) = %d, want %d", in, got, want)
 		}
+	}
+}
+
+func TestParseNetIO(t *testing.T) {
+	rx, tx := parseNetIO("1.52kB / 126B")
+	if rx != 1520 || tx != 126 {
+		t.Errorf("parseNetIO = %d,%d want 1520,126", rx, tx)
+	}
+	if rx, tx := parseNetIO("garbage"); rx != 0 || tx != 0 {
+		t.Errorf("parseNetIO(garbage) = %d,%d want 0,0", rx, tx)
+	}
+}
+
+func TestContainerLifecycleRejectsNonDocker(t *testing.T) {
+	c := &Client{} // not docker
+	if _, err := c.ContainerLifecycle(context.Background(), "start", "x"); err == nil {
+		t.Fatal("ContainerLifecycle should refuse on a non-Docker client")
+	}
+	d := &Client{docker: true, dockerBin: "docker"}
+	if _, err := d.ContainerLifecycle(context.Background(), "teleport", "x"); err == nil {
+		t.Fatal("ContainerLifecycle should reject an unknown verb")
 	}
 }
 

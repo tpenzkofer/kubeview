@@ -118,6 +118,8 @@ type dockerStat struct {
 	Name     string `json:"Name"`
 	CPUPerc  string `json:"CPUPerc"`
 	MemUsage string `json:"MemUsage"`
+	NetIO    string `json:"NetIO"` // "1.52kB / 126B"  (rx / tx, cumulative)
+	PIDs     string `json:"PIDs"`
 }
 
 type dockerInfo struct {
@@ -265,6 +267,8 @@ func containerToPod(d *dockerInspect, stats map[string]dockerStat, host string) 
 	if s, ok := statByID(stats, d.ID); ok {
 		pi.CPUMilli = parseCPUPerc(s.CPUPerc)
 		pi.MemBytes = parseSize(firstField(s.MemUsage))
+		pi.NetRxBytes, pi.NetTxBytes = parseNetIO(s.NetIO)
+		pi.PIDs, _ = strconv.Atoi(strings.TrimSpace(s.PIDs))
 	}
 
 	pi.Containers = []ContainerInfo{{
@@ -385,6 +389,28 @@ func (c *Client) dockerRestart(ctx context.Context, name string) (string, error)
 	return "restarted container " + name, nil
 }
 
+// Lifecycle verbs Docker supports that Kubernetes has no equivalent for. Verbs:
+// start | stop | pause | unpause | kill.
+var lifecyclePastTense = map[string]string{
+	"start": "started", "stop": "stopped", "pause": "paused",
+	"unpause": "unpaused", "kill": "killed",
+}
+
+// ContainerLifecycle runs a docker lifecycle verb on a container. It errors on a
+// non-Docker client, since pods have no start/stop/pause model.
+func (c *Client) ContainerLifecycle(ctx context.Context, verb, name string) (string, error) {
+	if !c.docker {
+		return "", fmt.Errorf("%s is a container operation; Kubernetes pods don't support it", verb)
+	}
+	if _, ok := lifecyclePastTense[verb]; !ok {
+		return "", fmt.Errorf("unknown lifecycle verb %q", verb)
+	}
+	if _, err := c.dockerOut(ctx, verb, name); err != nil {
+		return "", err
+	}
+	return lifecyclePastTense[verb] + " container " + name, nil
+}
+
 // ---- small parsers ----
 
 // statByID matches an inspect's full 64-char id against docker stats, which
@@ -415,6 +441,15 @@ func parseCPUPerc(s string) int64 {
 		return 0
 	}
 	return int64(f * 10)
+}
+
+// parseNetIO parses docker's "1.52kB / 126B" cumulative rx/tx into bytes.
+func parseNetIO(s string) (rx, tx int64) {
+	parts := strings.SplitN(s, "/", 2)
+	if len(parts) != 2 {
+		return 0, 0
+	}
+	return parseSize(strings.TrimSpace(parts[0])), parseSize(strings.TrimSpace(parts[1]))
 }
 
 func parsePortProto(s string) int32 {
